@@ -18,7 +18,10 @@ fn handle_client(stream: TcpStream) -> Result<()> {
     info!("Running test");
     loop {
         match socket.read()? {
-            msg @ Message::Text(_) | msg @ Message::Binary(_) => {
+            msg @ Message::Text(_)
+            | msg @ Message::Binary(_)
+            | msg @ Message::TextShared(_)
+            | msg @ Message::BinaryShared(_) => {
                 socket.send(msg)?;
             }
             Message::Ping(_) | Message::Pong(_) | Message::Close(_) | Message::Frame(_) => {}

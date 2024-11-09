@@ -439,7 +439,9 @@ impl WebSocketContext {
         }
 
         let frame = match message {
-            Message::Text(data) => Frame::message(data.into(), OpCode::Data(OpData::Text), true),
+            Message::Text(data) => {
+                Frame::message(data.into_bytes(), OpCode::Data(OpData::Text), true)
+            }
             Message::Binary(data) => Frame::message(data, OpCode::Data(OpData::Binary), true),
             Message::Ping(data) => Frame::ping(data),
             Message::Pong(data) => {
@@ -449,6 +451,10 @@ impl WebSocketContext {
             }
             Message::Close(code) => return self.close(stream, code),
             Message::Frame(f) => f,
+            Message::TextShared(data) => {
+                Frame::message(data.as_bytes().to_vec(), OpCode::Data(OpData::Text), true)
+            }
+            Message::BinaryShared(data) => Frame::message(data, OpCode::Data(OpData::Binary), true),
         };
 
         let should_flush = self._write(stream, Some(frame))?;
@@ -608,9 +614,9 @@ impl WebSocketContext {
                             if self.state.is_active() {
                                 self.set_additional(Frame::pong(data.clone()));
                             }
-                            Ok(Some(Message::Ping(data)))
+                            Ok(Some(Message::Ping(data.to_vec())))
                         }
-                        OpCtl::Pong => Ok(Some(Message::Pong(frame.into_data()))),
+                        OpCtl::Pong => Ok(Some(Message::Pong(frame.into_data().to_vec()))),
                     }
                 }
 

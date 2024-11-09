@@ -1,4 +1,11 @@
-use std::{fmt, result::Result as StdResult, str};
+use std::{
+    fmt,
+    result::Result as StdResult,
+    str::{self},
+};
+
+use bytes::Bytes;
+use bytestring::ByteString;
 
 use super::frame::{CloseFrame, Frame};
 use crate::error::{CapacityError, Error, Result};
@@ -157,6 +164,12 @@ pub enum Message {
     Text(String),
     /// A binary WebSocket message
     Binary(Vec<u8>),
+
+    /// A text websocket message that tries to reduce number of reallocations, but fails at frame creation
+    TextShared(ByteString),
+    /// A binary websocket message that tries to reduce number of reallocations, but fails at frame creation
+    BinaryShared(Bytes),
+
     /// A ping message with the specified payload
     ///
     /// The payload here must have a length less than 125 bytes
@@ -222,6 +235,8 @@ impl Message {
             }
             Message::Close(ref data) => data.as_ref().map(|d| d.reason.len()).unwrap_or(0),
             Message::Frame(ref frame) => frame.len(),
+            Message::TextShared(ref string) => string.len(),
+            Message::BinaryShared(ref data) => data.len(),
         }
     }
 
@@ -232,13 +247,15 @@ impl Message {
     }
 
     /// Consume the WebSocket and return it as binary data.
-    pub fn into_data(self) -> Vec<u8> {
+    pub fn into_data(self) -> Bytes {
         match self {
-            Message::Text(string) => string.into_bytes(),
-            Message::Binary(data) | Message::Ping(data) | Message::Pong(data) => data,
-            Message::Close(None) => Vec::new(),
-            Message::Close(Some(frame)) => frame.reason.into_owned().into_bytes(),
+            Message::Text(string) => Bytes::from(string.into_bytes()),
+            Message::Binary(data) | Message::Ping(data) | Message::Pong(data) => Bytes::from(data),
+            Message::Close(None) => Bytes::new(),
+            Message::Close(Some(frame)) => frame.reason.into_owned().into(),
             Message::Frame(frame) => frame.into_data(),
+            Message::TextShared(string) => string.into_bytes(),
+            Message::BinaryShared(data) => data,
         }
     }
 
@@ -252,6 +269,8 @@ impl Message {
             Message::Close(None) => Ok(String::new()),
             Message::Close(Some(frame)) => Ok(frame.reason.into_owned()),
             Message::Frame(frame) => Ok(frame.into_string()?),
+            Message::TextShared(string) => Ok(string.to_string()),
+            Message::BinaryShared(data) => Ok(String::from_utf8(data.to_vec())?),
         }
     }
 
@@ -266,6 +285,8 @@ impl Message {
             Message::Close(None) => Ok(""),
             Message::Close(Some(ref frame)) => Ok(&frame.reason),
             Message::Frame(ref frame) => Ok(frame.to_text()?),
+            Message::TextShared(_) => todo!(),
+            Message::BinaryShared(_) => todo!(),
         }
     }
 }
@@ -296,7 +317,7 @@ impl From<Vec<u8>> for Message {
 
 impl From<Message> for Vec<u8> {
     fn from(message: Message) -> Self {
-        message.into_data()
+        message.into_data().to_vec()
     }
 }
 
